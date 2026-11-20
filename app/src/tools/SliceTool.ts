@@ -189,6 +189,8 @@ export class SliceTool implements Tool {
 
   /** Last-known plane point, following the cursor (pre-typed-offset). */
   private lastPoint: [number, number, number] | null = null
+  /** Last-known hover snap, so lifting a plane lock re-aligns to the hovered face immediately. */
+  private lastSnap: Snap | null = null
   /** Last-known plane normal: the locked axis, or a hovered face's normal. */
   private lastNormal: [number, number, number] = AXIS_NORMAL[2]
   /** World Object (or, inside an instance context, a def member) under the
@@ -276,6 +278,7 @@ export class SliceTool implements Tool {
 
   onPointerMove(snap: Snap | null, ray: Ray): void {
     this.lastPickObject = this._pickWorldObject(ray)
+    this.lastSnap = snap
     if (snap === null) return
 
     this.lastPoint = [snap.x, snap.y, snap.z]
@@ -285,6 +288,7 @@ export class SliceTool implements Tool {
 
   onPointerDown(snap: Snap | null, ray: Ray): void {
     this.lastPickObject = this._pickWorldObject(ray)
+    this.lastSnap = snap
     if (snap === null) return
 
     this.lastPoint = [snap.x, snap.y, snap.z]
@@ -303,6 +307,7 @@ export class SliceTool implements Tool {
         this._refreshPreview()
       } else if (this.lockedNormal !== null) {
         this.lockedNormal = null
+        if (this.lastSnap !== null) this.lastNormal = this._resolveNormal(this.lastSnap)
         this._refreshPreview()
       } else {
         this.cancel()
@@ -315,7 +320,12 @@ export class SliceTool implements Tool {
     // plane can be pinned. Guard autorepeat so a held Shift doesn't flicker.
     if (ev.key === 'Shift') {
       if (!ev.repeat) {
-        this.lockedNormal = this.lockedNormal === null ? this.lastNormal : null
+        if (this.lockedNormal === null) {
+          this.lockedNormal = this.lastNormal
+        } else {
+          this.lockedNormal = null
+          if (this.lastSnap !== null) this.lastNormal = this._resolveNormal(this.lastSnap)
+        }
         this._refreshPreview()
       }
       return
@@ -369,6 +379,7 @@ export class SliceTool implements Tool {
     this.typed = ''
     this._clearPreview()
     this.lastPoint = null
+    this.lastSnap = null
     this.lockedNormal = null
     this.onMeasurementCb('')
   }

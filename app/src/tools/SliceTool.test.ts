@@ -350,6 +350,43 @@ describe('SliceTool — hasArmedGesture (distinct from the unconditional capturi
     tool.onKey(makeKeyEvent('Escape')) // first Escape lifts the lock, per the tool's own semantics
     expect(tool.hasArmedGesture()).toBe(false)
   })
+
+  it('lifting a plane lock via Escape or Shift immediately re-aligns to the hovered face without moving the pointer', () => {
+    const preview = new THREE.Group()
+    const wasmScene = {
+      face_plane: vi.fn(() => new Float64Array([0, 0, 0, 1, 0, 0])), // +X face
+      pick_face: vi.fn(() => makeFacePick(3n, 4n)),
+      slice_object: vi.fn(() => new BigUint64Array([10n, 11n])),
+    } as unknown as WasmScene
+    const tool = new SliceTool(wasmScene, preview, vi.fn(), vi.fn())
+    const faceSnap = makeSnap({ x: 0, y: 0, z: 0, kind: 'face', elementKind: 'face', object: 3n, element: 4n })
+
+    // Hover +X face, lock to +Z with ArrowUp, then unlock via Escape.
+    tool.onPointerMove(faceSnap, RAY)
+    tool.onKey(makeKeyEvent('ArrowUp'))
+    tool.onKey(makeKeyEvent('Escape'))
+    expect(tool.hasArmedGesture()).toBe(false)
+
+    // Typing an offset and committing without another pointer move slices along +X, not stale +Z.
+    tool.onKey(makeKeyEvent('1'))
+    tool.onKey(makeKeyEvent('m'))
+    tool.onKey(makeKeyEvent('Enter'))
+    const firstPlane = (wasmScene.slice_object as ReturnType<typeof vi.fn>).mock.calls[0][1] as Float64Array
+    expect(Array.from(firstPlane.slice(3))).toEqual([1, 0, 0])
+    expect(firstPlane[0]).toBeCloseTo(1, 9)
+
+    // Repeat the same check when unlocking via Shift.
+    tool.onPointerMove(faceSnap, RAY)
+    tool.onKey(makeKeyEvent('ArrowUp'))
+    tool.onKey(makeKeyEvent('Shift'))
+    expect(tool.hasArmedGesture()).toBe(false)
+    tool.onKey(makeKeyEvent('2'))
+    tool.onKey(makeKeyEvent('m'))
+    tool.onKey(makeKeyEvent('Enter'))
+    const secondPlane = (wasmScene.slice_object as ReturnType<typeof vi.fn>).mock.calls[1][1] as Float64Array
+    expect(Array.from(secondPlane.slice(3))).toEqual([1, 0, 0])
+    expect(secondPlane[0]).toBeCloseTo(2, 9)
+  })
 })
 
 describe('SliceTool — setEditContext aborts an armed gesture on a genuine change (component-edit-parity.md phase A2)', () => {

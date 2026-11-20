@@ -332,7 +332,9 @@ import * as savePanel from './io/savePanel'
 import { isPristineDocument, sameSessionStackIdentity, AUTOSAVE_INTERVAL_MS } from './App'
 import type { DocSessionState } from './io/documentSession'
 import type { Scene } from './wasm/loader'
+import * as THREE from 'three'
 import { MATERIAL_SENTINEL } from './tools/PaintTool'
+import { SliceTool } from './tools/SliceTool'
 import { clearOpenAttempt, getFailedOpen } from './log/failedOpen'
 import { clearKernelStop, getKernelStop, getPanicCapture, KERNEL_PANIC_EVENT } from './log/panicCapture'
 import { kernelMemoryBytes } from './wasm/kernelMemory'
@@ -1094,6 +1096,61 @@ describe('App — keyboard shortcuts', () => {
     fireEvent.click(screen.getByRole('button', { name: /^tools$/i }))
     const selectItem = menubar().getByText('Select').closest('div')
     expect(selectItem?.textContent).toContain('✓')
+  })
+
+  it('exits Slice mode when pressing Space or another tool shortcut (e.g. R, M)', async () => {
+    const sliceTool = new SliceTool(mockScene as unknown as Scene, new THREE.Group(), vi.fn(), vi.fn())
+    try {
+      vi.mocked(Viewport).mockImplementation(((props: { activeTool?: string; apiRef?: { current: unknown } }) => {
+        if (props.apiRef !== undefined) {
+          props.apiRef.current = {
+            isCapturingInput: (key?: string) => {
+              if (props.activeTool !== 'Slice') return false
+              if (key !== undefined && 'capturesKey' in sliceTool) {
+                return (sliceTool as { capturesKey(k: string): boolean }).capturesKey(key)
+              }
+              return sliceTool.capturingInput()
+            },
+          }
+        }
+        return null
+      }) as never)
+
+      await renderAndLoad()
+
+      const activateSliceFromMenu = () => {
+        fireEvent.click(screen.getByRole('button', { name: /^tools$/i }))
+        fireEvent.mouseDown(menubar().getByText('Slice'))
+      }
+
+      // Enter Slice mode, then hit R → switches to Rectangle.
+      activateSliceFromMenu()
+      fireEvent.click(screen.getByRole('button', { name: /^tools$/i }))
+      expect(menubar().getByText('Slice').closest('div')?.textContent).toContain('✓')
+      fireEvent.keyDown(document, { key: 'Escape' }) // close menu
+
+      fireEvent.keyDown(document, { key: 'r', code: 'KeyR' })
+      fireEvent.click(screen.getByRole('button', { name: /^draw$/i }))
+      expect(menubar().getByText('Rectangle').closest('div')?.textContent).toContain('✓')
+      fireEvent.keyDown(document, { key: 'Escape' })
+
+      // Re-enter Slice mode, then hit M (a length unit-suffix letter too) → switches to Move.
+      activateSliceFromMenu()
+      fireEvent.keyDown(document, { key: 'm', code: 'KeyM' })
+      fireEvent.click(screen.getByRole('button', { name: /^tools$/i }))
+      expect(menubar().getByText('Move').closest('div')?.textContent).toContain('✓')
+      expect(menubar().getByText('Slice').closest('div')?.textContent).not.toContain('✓')
+      fireEvent.keyDown(document, { key: 'Escape' })
+
+      // Re-enter Slice mode, then hit Space → switches to Select.
+      activateSliceFromMenu()
+      fireEvent.keyDown(document, { key: ' ', code: 'Space' })
+      fireEvent.click(screen.getByRole('button', { name: /^tools$/i }))
+      expect(menubar().getByText('Select').closest('div')?.textContent).toContain('✓')
+      expect(menubar().getByText('Slice').closest('div')?.textContent).not.toContain('✓')
+    } finally {
+      vi.mocked(Viewport).mockImplementation((() => null) as never)
+    }
   })
 
   it('bare R activates the Rectangle tool (SketchUp-for-Windows scheme)', async () => {
